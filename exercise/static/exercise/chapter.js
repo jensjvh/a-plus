@@ -44,6 +44,7 @@
       this.modalElement = $(this.settings.modal_selector);
       this.loader = $(this.settings.loading_selector);
       this.messages = this.readMessages();
+      this.loadedExerciseCount = 0;
 
       // do not include active element inputs to exercise groups
       this.element.find("[" + this.settings.active_element_attr +	"='in']").aplusExercise(this, {input: true});
@@ -57,7 +58,10 @@
         this.exercises = exercises
         this.exercisesIndex = 0;
         this.exercisesSize = exercises.length;
-        this.nextExercise();
+
+        $(document).on('aplus:exercise-ready', this.onExerciseReady.bind(this));
+
+        this.setupLoadVisible();
       } else {
         const type = 'text/x.aplus-exercise';
         this.dom_element.dispatchEvent(
@@ -103,6 +107,47 @@
       lastVisited[instanceUrl] = { url: window.location.href, title };
 
       localStorage.setItem("lastVisitedReminder", JSON.stringify(lastVisited));
+    },
+
+    setupLoadVisible: function() {
+      var chapter = this;
+
+      if ('IntersectionObserver' in window) {
+        var observer = new IntersectionObserver(function(entries, observer) {
+          entries.forEach(function(entry) {
+            if (entry.isIntersecting) {
+              var exercise = $(entry.target).data('plugin_aplusExercise');
+              if (exercise && !exercise.isLoaded) {
+                exercise.isLoaded = true;
+                exercise.load(true);
+              }
+              observer.unobserve(entry.target);
+            }
+          });
+        }, {
+          root: null,
+          rootMargin: '200px 0px',
+          threshold: 0.1
+        });
+
+        this.exercises.each(function() {
+          observer.observe(this);
+        });
+      } else {
+        this.nextExercise();
+      }
+    },
+
+    onExerciseReady: function(event) {
+      if (this.exercises && $(event.target).closest(this.exercises).length > 0) {
+        this.loadedExerciseCount++;
+
+        // When all exercises are loaded dispatch chapter-ready event
+        if (this.loadedExerciseCount >= this.exercisesSize) {
+          this.dom_element.dispatchEvent(
+            new CustomEvent("aplus:chapter-ready", {bubbles: true}));
+        }
+      }
     },
 
     nextExercise: function() {
@@ -215,6 +260,7 @@
   $.extend(AplusExercise.prototype, {
 
     init: function() {
+      this.isLoaded = false;
       this.chapterID = this.element.attr("id");
       this.url = this.element.attr(this.chapter.settings.exercise_url_attr);
       this.url = this.url + "?__r=" + encodeURIComponent(
